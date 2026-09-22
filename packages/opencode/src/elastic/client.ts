@@ -2,6 +2,7 @@
 import os from "node:os"
 import { ElasticAuth } from "./auth"
 import { Installation } from "../installation"
+import { hydrate, toEvents } from "./timeline"
 
 export interface ConversationRound {
   id: string
@@ -34,6 +35,8 @@ export interface Conversation {
   conversation_rounds: ConversationRound[]
   attachments?: unknown[]
   state?: unknown
+  events?: unknown[]
+  schema_version?: number
 }
 
 export type ConversationSummary = Omit<Conversation, "conversation_rounds">
@@ -253,13 +256,27 @@ export namespace KibanaClient {
         return request(api("/internal/elastic_ramen/conversations", qs ? "?" + qs : "", space))
       },
       async get(id: string): Promise<Conversation> {
-        return request(api("/internal/elastic_ramen/conversations", `/${encodeURIComponent(id)}`, space))
+        const conv = await request<Conversation>(api("/internal/elastic_ramen/conversations", `/${encodeURIComponent(id)}`, space))
+        return hydrate(conv)
       },
       async create(body: { agent_id: string; title: string; conversation_rounds: ConversationRound[]; user_name?: string; attachments?: unknown[] }): Promise<{ id: string }> {
-        return request(api("/internal/elastic_ramen/conversations", "", space), { method: "POST", body })
+        return request(api("/internal/elastic_ramen/conversations", "", space), {
+          method: "POST",
+          body: {
+            ...body,
+            events: toEvents(body.conversation_rounds, { agent: body.agent_id, user: body.user_name ?? "elastic" }),
+            schema_version: 1,
+          },
+        })
       },
-      async update(id: string, body: { title?: string; conversation_rounds?: ConversationRound[] }): Promise<void> {
-        await request(api("/internal/elastic_ramen/conversations", `/${encodeURIComponent(id)}`, space), { method: "PUT", body })
+      async update(id: string, body: { title?: string; conversation_rounds?: ConversationRound[]; agent_id?: string; user_name?: string }): Promise<void> {
+        const events = body.conversation_rounds
+          ? toEvents(body.conversation_rounds, { agent: body.agent_id ?? "elastic-ai-agent", user: body.user_name ?? "elastic" })
+          : undefined
+        await request(api("/internal/elastic_ramen/conversations", `/${encodeURIComponent(id)}`, space), {
+          method: "PUT",
+          body: { ...body, ...(events ? { events, schema_version: 1 } : {}) },
+        })
       },
     }
   }
