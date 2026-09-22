@@ -150,7 +150,6 @@ export namespace Handover {
         await api.update(existing.conversationID, {
           title: `RAMEN: ${title}`,
           conversation_rounds: conversationRounds,
-          agent_id: existing.agentID,
         })
         return
       } catch (err) {
